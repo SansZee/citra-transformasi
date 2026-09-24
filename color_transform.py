@@ -28,6 +28,15 @@ def rgb_to_grayscale(rgb):
     return 0.299 * r + 0.587 * g + 0.114 * b
 
 
+def invert_grayscale(gray):
+    return 1.0 - gray
+
+
+def logarithmic_transform(gray):
+    c = 1.0 / np.log(2.0)
+    return np.clip(c * np.log1p(gray), 0.0, 1.0)
+
+
 def rgb_to_hs(rgb):
     """Hue [0..360) derajat dan Saturation [0..1] (dari HSV)."""
     r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
@@ -63,6 +72,95 @@ def rgb_to_ycbcr(rgb):
 def rgb_to_cmy(rgb):
     """Subtractive CMY = pelengkap (complement) RGB dalam [0..1]."""
     return 1.0 - rgb
+
+
+def _sample_inverse_affine(image, matrix, fill_value=1.0):
+    height, width = image.shape[:2]
+    grid_y, grid_x = np.indices((height, width))
+    source_x = matrix[0, 0] * grid_x + matrix[0, 1] * grid_y + matrix[0, 2]
+    source_y = matrix[1, 0] * grid_x + matrix[1, 1] * grid_y + matrix[1, 2]
+
+    valid = (
+        (source_x >= 0)
+        & (source_x <= width - 1)
+        & (source_y >= 0)
+        & (source_y <= height - 1)
+    )
+    x0 = np.floor(source_x).astype(np.intp)
+    y0 = np.floor(source_y).astype(np.intp)
+    x1 = np.minimum(x0 + 1, width - 1)
+    y1 = np.minimum(y0 + 1, height - 1)
+    x0_valid = np.clip(x0[valid], 0, width - 1)
+    x1_valid = np.clip(x1[valid], 0, width - 1)
+    y0_valid = np.clip(y0[valid], 0, height - 1)
+    y1_valid = np.clip(y1[valid], 0, height - 1)
+    x_weight = (source_x - x0)[valid]
+    y_weight = (source_y - y0)[valid]
+    channel_shape = (1,) * (image.ndim - 2)
+    x_weight = x_weight.reshape(x_weight.shape + channel_shape)
+    y_weight = y_weight.reshape(y_weight.shape + channel_shape)
+
+    top_left = image[y0_valid, x0_valid]
+    top_right = image[y0_valid, x1_valid]
+    bottom_left = image[y1_valid, x0_valid]
+    bottom_right = image[y1_valid, x1_valid]
+    top = top_left * (1.0 - x_weight) + top_right * x_weight
+    bottom = bottom_left * (1.0 - x_weight) + bottom_right * x_weight
+
+    output = np.full(
+        image.shape,
+        fill_value,
+        dtype=np.result_type(image.dtype, np.float64),
+    )
+    output[valid] = top * (1.0 - y_weight) + bottom * y_weight
+    return output
+
+
+def scale_image(image, scale_x=0.5, scale_y=0.5, fill_value=1.0):
+    if scale_x <= 0 or scale_y <= 0:
+        raise ValueError("Faktor skala harus lebih besar dari nol.")
+
+    height, width = image.shape[:2]
+    center_x = (width - 1) / 2.0
+    center_y = (height - 1) / 2.0
+    matrix = np.array(
+        [
+            [1.0 / scale_x, 0.0, center_x * (1.0 - 1.0 / scale_x)],
+            [0.0, 1.0 / scale_y, center_y * (1.0 - 1.0 / scale_y)],
+        ]
+    )
+    return _sample_inverse_affine(image, matrix, fill_value)
+
+
+def translate_image(image, dx=50, dy=30, fill_value=1.0):
+    matrix = np.array([[1.0, 0.0, -dx], [0.0, 1.0, -dy]])
+    return _sample_inverse_affine(image, matrix, fill_value)
+
+
+def rotate_image(image, angle=30.0, center=None, fill_value=1.0):
+    height, width = image.shape[:2]
+    if center is None:
+        center = ((width - 1) / 2.0, (height - 1) / 2.0)
+
+    center_x, center_y = center
+    theta = np.deg2rad(angle)
+    cosine = np.cos(theta)
+    sine = np.sin(theta)
+    matrix = np.array(
+        [
+            [
+                cosine,
+                -sine,
+                center_x - cosine * center_x + sine * center_y,
+            ],
+            [
+                sine,
+                cosine,
+                center_y - sine * center_x - cosine * center_y,
+            ],
+        ]
+    )
+    return _sample_inverse_affine(image, matrix, fill_value)
 
 
 # ---------------------------------------------------------------------------
@@ -112,6 +210,30 @@ plot_channels(
     "grayscale.png",
 )
 
+inverse_gray = invert_grayscale(gray)
+log_gray = logarithmic_transform(gray)
+plot_channels(
+    "Transformasi Citra Tingkat Keabuan",
+    [gray, inverse_gray, log_gray],
+    ["Grayscale", "Invers (1-r)", "Log (c=1/ln(2))"],
+    ["gray", "gray", "gray"],
+    "grayscale_transformations.png",
+)
+plot_channels(
+    "2a. Invers Citra (Negative)",
+    [gray, inverse_gray],
+    ["Grayscale", "Hasil Invers (1-r)"],
+    ["gray", "gray"],
+    "2a_invers_citra.png",
+)
+plot_channels(
+    "2b. Log Transform (s = c log(1+r))",
+    [gray, log_gray],
+    ["Grayscale", "Hasil Log"],
+    ["gray", "gray"],
+    "2b_log_transform.png",
+)
+
 # --- b. RGB -> HS -----------------------------------------------------------
 h, s = rgb_to_hs(rgb_src)
 plot_channels(
@@ -140,6 +262,38 @@ plot_channels(
     ["Cyan (C = 1-R)", "Magenta (M = 1-G)", "Yellow (Y = 1-B)"],
     ["Blues", "Purples", "YlOrBr"],
     "cmy_channels.png",
+)
+
+scaled = scale_image(rgb_src, 0.5, 0.5)
+translated = translate_image(rgb_src, 50, 30)
+rotated = rotate_image(rgb_src, 30.0)
+plot_channels(
+    "Transformasi Geometri",
+    [scaled, translated, rotated],
+    ["Skala 0,5x", "Translasi (50, 30) px", "Rotasi 30° CCW"],
+    [None, None, None],
+    "geometric_transformations.png",
+)
+plot_channels(
+    "3a. Skala",
+    [scaled],
+    ["Skala 0,5x"],
+    [None],
+    "3a_skala.png",
+)
+plot_channels(
+    "3b. Translasi",
+    [translated],
+    ["Translasi (50, 30) px"],
+    [None],
+    "3b_translasi.png",
+)
+plot_channels(
+    "3c. Rotasi",
+    [rotated],
+    ["Rotasi 30° CCW"],
+    [None],
+    "3c_rotasi.png",
 )
 
 # --- e. Montase gabungan ----------------------------------------------------
