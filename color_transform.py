@@ -1,10 +1,3 @@
-"""Transformasi ruang warna RGB -> Grayscale, HS, YCbCr, dan CMY.
-
-Semua transformasi dihitung manual dengan NumPy (tanpa OpenCV untuk
-mengubah citra). OpenCV / matplotlib hanya dipakai untuk membaca citra
-dan visualisasi.
-"""
-
 import os
 
 import matplotlib.image as mpimg
@@ -19,9 +12,7 @@ os.makedirs(OUT_DIR, exist_ok=True)
 DPI = 110
 
 
-# ---------------------------------------------------------------------------
 # 1. Konversi manual (input RGB float [0..1], shape (H, W, 3))
-# ---------------------------------------------------------------------------
 def rgb_to_grayscale(rgb):
     """Lightness perceptif, standar ITU-R BT.601."""
     r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
@@ -163,9 +154,7 @@ def rotate_image(image, angle=30.0, center=None, fill_value=1.0):
     return _sample_inverse_affine(image, matrix, fill_value)
 
 
-# ---------------------------------------------------------------------------
 # 2. Membaca citra
-# ---------------------------------------------------------------------------
 rgb_src = mpimg.imread(IMG_PATH)
 if rgb_src.max() > 1.0:
     rgb_src = rgb_src / 255.0
@@ -176,9 +165,7 @@ print(f"Dependency   : numpy {np.__version__}, matplotlib {plt.matplotlib.__vers
 print("Semua konversi ditulis manual (tanpa cv2.cvtColor).", end="\n\n")
 
 
-# ---------------------------------------------------------------------------
 # 3. Visualisasi umum: gambar pratinjau + per-kanal, lalu simpan PNG
-# ---------------------------------------------------------------------------
 def plot_channels(fig_title, images, labels, cmaps, save_name):
     n = len(images)
     fig, axes = plt.subplots(1, n + 1, figsize=(3.2 * (n + 1), 3.4))
@@ -207,7 +194,7 @@ plot_channels(
     [gray],
     ["Grayscale"],
     ["gray"],
-    "grayscale.png",
+    "1a_grayscale.png",
 )
 
 inverse_gray = invert_grayscale(gray)
@@ -241,7 +228,7 @@ plot_channels(
     [h / 360.0, s],
     ["Hue (H) 0-360°", "Saturation (S) 0-1"],
     ["hsv", "gray"],
-    "hs_channels.png",
+    "1b_hs_channels.png",
 )
 
 # --- c. RGB -> YCbCr --------------------------------------------------------
@@ -251,7 +238,7 @@ plot_channels(
     [y / 255.0, cb / 255.0, cr / 255.0],
     ["Y (Luma)", "Cb (Chroma Blue)", "Cr (Chroma Red)"],
     ["gray", "gray", "gray"],
-    "ycbcr_channels.png",
+    "1c_ycbcr_channels.png",
 )
 
 # --- d. RGB -> CMY ----------------------------------------------------------
@@ -261,7 +248,7 @@ plot_channels(
     [cmy[..., 0], cmy[..., 1], cmy[..., 2]],
     ["Cyan (C = 1-R)", "Magenta (M = 1-G)", "Yellow (Y = 1-B)"],
     ["Blues", "Purples", "YlOrBr"],
-    "cmy_channels.png",
+    "1d_cmy_channels.png",
 )
 
 scaled = scale_image(rgb_src, 0.5, 0.5)
